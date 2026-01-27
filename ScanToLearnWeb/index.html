@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScanToLearn - Learn Vocabulary from Images</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- Tesseract.js for OCR -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Home Screen -->
+        <div id="home-screen" class="screen active">
+            <div class="home-content">
+                <div class="logo">
+                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <line x1="3" y1="9" x2="21" y2="9"/>
+                        <line x1="9" y1="21" x2="9" y2="9"/>
+                    </svg>
+                    <h1>ScanToLearn</h1>
+                    <p class="tagline">Learn vocabulary from images</p>
+                </div>
+
+                <!-- Language Selector -->
+                <div class="language-selector">
+                    <h3>Languages</h3>
+                    <div class="language-row">
+                        <div class="language-picker">
+                            <label>From</label>
+                            <select id="source-language">
+                                <option value="jpn" selected>Japanese</option>
+                                <option value="eng">English</option>
+                                <option value="spa">Spanish</option>
+                                <option value="fra">French</option>
+                                <option value="deu">German</option>
+                                <option value="chi_sim">Chinese (Simplified)</option>
+                                <option value="kor">Korean</option>
+                            </select>
+                        </div>
+                        <button id="swap-languages" class="swap-btn" title="Swap languages">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M7 16l-4-4m0 0l4-4m-4 4h18M17 8l4 4m0 0l-4 4m4-4H3"/>
+                            </svg>
+                        </button>
+                        <div class="language-picker">
+                            <label>To</label>
+                            <select id="target-language">
+                                <option value="jpn">Japanese</option>
+                                <option value="eng" selected>English</option>
+                                <option value="spa">Spanish</option>
+                                <option value="fra">French</option>
+                                <option value="deu">German</option>
+                                <option value="chi_sim">Chinese (Simplified)</option>
+                                <option value="kor">Korean</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload Button -->
+                <div class="action-buttons">
+                    <label for="file-input" class="btn btn-primary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        Upload Image
+                    </label>
+                    <input type="file" id="file-input" accept="image/*" hidden>
+
+                    <button id="paste-btn" class="btn btn-secondary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                        </svg>
+                        Paste from Clipboard
+                    </button>
+                </div>
+
+                <p class="hint">Supports JPG, PNG, GIF, WebP images</p>
+            </div>
+        </div>
+
+        <!-- Processing Screen -->
+        <div id="processing-screen" class="screen">
+            <div class="processing-content">
+                <div class="spinner"></div>
+                <h2>Recognizing text...</h2>
+                <p id="processing-status">Initializing OCR engine</p>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <p id="progress-text">0%</p>
+            </div>
+        </div>
+
+        <!-- Review Screen -->
+        <div id="review-screen" class="screen">
+            <div class="review-header">
+                <button id="back-btn" class="btn btn-icon" title="Back to home">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <h2>Review</h2>
+                <div class="header-actions">
+                    <button id="reveal-all-btn" class="btn btn-small">Reveal All</button>
+                    <button id="hide-all-btn" class="btn btn-small">Hide All</button>
+                </div>
+            </div>
+
+            <div class="review-content">
+                <!-- Image Preview -->
+                <div class="image-preview-container">
+                    <img id="preview-image" src="" alt="Uploaded image">
+                    <button id="expand-image-btn" class="expand-btn" title="View full image">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Tokens Display -->
+                <div class="tokens-section">
+                    <div class="tokens-header">
+                        <h3>Recognized Words</h3>
+                        <span id="tokens-count">0/0</span>
+                    </div>
+                    <div id="tokens-container" class="tokens-container">
+                        <!-- Tokens will be inserted here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Modal -->
+        <div id="image-modal" class="modal">
+            <div class="modal-content">
+                <button id="close-modal-btn" class="close-btn">&times;</button>
+                <img id="modal-image" src="" alt="Full size image">
+            </div>
+        </div>
+
+        <!-- Token Detail Popover -->
+        <div id="token-popover" class="popover hidden">
+            <div class="popover-content">
+                <h4 id="popover-word"></h4>
+                <div class="popover-divider"></div>
+                <div class="popover-section">
+                    <label>Meaning</label>
+                    <p id="popover-meaning"></p>
+                </div>
+                <div class="popover-section" id="popover-pos-section">
+                    <label>Part of Speech</label>
+                    <p id="popover-pos"></p>
+                </div>
+                <div class="popover-section" id="popover-example-section">
+                    <label>Example</label>
+                    <p id="popover-example"></p>
+                </div>
+                <div class="popover-section">
+                    <label>OCR Confidence</label>
+                    <div class="confidence-bar">
+                        <div id="popover-confidence-fill" class="confidence-fill"></div>
+                    </div>
+                    <span id="popover-confidence-text"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/translation-service.js"></script>
+    <script src="js/ocr-service.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
