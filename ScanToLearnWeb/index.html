@@ -59,6 +59,18 @@
                     </div>
                 </div>
 
+                <!-- OCR Settings -->
+                <div class="ocr-settings">
+                    <h3>OCR Settings</h3>
+                    <div class="setting-row">
+                        <label for="confidence-slider">
+                            Min. Confidence: <span id="confidence-value">50%</span>
+                        </label>
+                        <input type="range" id="confidence-slider" min="0" max="95" value="50" step="5">
+                        <p class="setting-hint">Higher = fewer false detections, but may miss real text</p>
+                    </div>
+                </div>
+
                 <!-- Upload Button -->
                 <div class="action-buttons">
                     <label for="file-input" class="btn btn-primary">
@@ -80,7 +92,7 @@
                     </button>
                 </div>
 
-                <p class="hint">Supports JPG, PNG, GIF, WebP images</p>
+                <p class="hint">Supports JPG, PNG, GIF, WebP images. Use higher confidence for images with illustrations.</p>
             </div>
         </div>
 

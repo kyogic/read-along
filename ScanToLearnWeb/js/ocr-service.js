@@ -4,16 +4,44 @@
  */
 
 class OCRService {
-    constructor() {
+    constructor(options = {}) {
         this.worker = null;
         this.currentLanguage = 'jpn';
-        this.lineGroupingThreshold = 0.5; // Fraction of average character height
+        this.lineGroupingThreshold = 0.5;
+
+        // Configurable filtering options
+        this.options = {
+            // Minimum confidence threshold (0-1). Words below this are filtered out.
+            minConfidence: options.minConfidence ?? 0.50,
+
+            // Minimum word length (characters)
+            minWordLength: options.minWordLength ?? 1,
+
+            // Filter out pure punctuation/symbols
+            filterPunctuation: options.filterPunctuation ?? true,
+
+            // Filter out pure numbers (often misdetections)
+            filterNumbers: options.filterNumbers ?? false,
+
+            // Minimum bounding box size (fraction of image). Filters tiny artifacts.
+            minBboxSize: options.minBboxSize ?? 0.001,
+
+            // Characters to always filter out (common OCR artifacts)
+            filterCharacters: options.filterCharacters ?? ['|', '/', '\\', '_', '-', '—', '~', '*', '`', '"', "'", '.', ',', '!', '?', ':', ';', '(', ')', '[', ']', '{', '}', '<', '>', '=', '+'],
+
+            ...options
+        };
+    }
+
+    /**
+     * Update OCR options
+     */
+    setOptions(options) {
+        this.options = { ...this.options, ...options };
     }
 
     /**
      * Initialize or reinitialize the Tesseract worker with a specific language
-     * @param {string} language - Tesseract language code (e.g., 'jpn', 'eng')
-     * @param {Function} progressCallback - Callback for progress updates
      */
     async initWorker(language, progressCallback) {
         // Terminate existing worker if language changed
@@ -29,7 +57,6 @@ class OCRService {
                         let statusText = m.status;
                         let progress = m.progress || 0;
 
-                        // Map Tesseract status to user-friendly text
                         if (m.status === 'loading tesseract core') {
                             statusText = 'Loading OCR engine...';
                         } else if (m.status === 'initializing tesseract') {
@@ -54,10 +81,6 @@ class OCRService {
 
     /**
      * Recognize text tokens from an image
-     * @param {string|File|Blob} image - Image source
-     * @param {string} language - Language code
-     * @param {Function} progressCallback - Progress callback
-     * @returns {Promise<Array>} Array of token objects
      */
     async recognizeTokens(image, language, progressCallback) {
         const worker = await this.initWorker(language, progressCallback);
@@ -65,7 +88,7 @@ class OCRService {
         // Perform OCR
         const result = await worker.recognize(image);
 
-        // Extract tokens from result
+        // Extract and filter tokens
         const tokens = this.processResult(result);
 
         // Sort tokens in reading order
@@ -75,9 +98,7 @@ class OCRService {
     }
 
     /**
-     * Process Tesseract result into token objects
-     * @param {Object} result - Tesseract recognition result
-     * @returns {Array} Array of token objects
+     * Process Tesseract result into token objects with filtering
      */
     processResult(result) {
         const tokens = [];
@@ -86,29 +107,40 @@ class OCRService {
             return tokens;
         }
 
+        const pageWidth = result.data.width || 1;
+        const pageHeight = result.data.height || 1;
+
         for (const word of result.data.words) {
-            // Skip empty or whitespace-only words
+            // Skip empty words
             if (!word.text || !word.text.trim()) {
                 continue;
             }
 
-            // Calculate normalized bounding box (0-1 range)
-            const pageWidth = result.data.width || 1;
-            const pageHeight = result.data.height || 1;
+            const text = word.text.trim();
+            const confidence = word.confidence / 100;
+
+            // Calculate bounding box
+            const bboxWidth = (word.bbox.x1 - word.bbox.x0) / pageWidth;
+            const bboxHeight = (word.bbox.y1 - word.bbox.y0) / pageHeight;
+            const bboxSize = bboxWidth * bboxHeight;
+
+            // Apply filters
+            if (!this.passesFilters(text, confidence, bboxSize)) {
+                continue;
+            }
 
             const boundingBox = {
                 x: word.bbox.x0 / pageWidth,
-                y: 1 - (word.bbox.y1 / pageHeight), // Flip Y to match Vision coordinate system
-                width: (word.bbox.x1 - word.bbox.x0) / pageWidth,
-                height: (word.bbox.y1 - word.bbox.y0) / pageHeight
+                y: 1 - (word.bbox.y1 / pageHeight),
+                width: bboxWidth,
+                height: bboxHeight
             };
 
             tokens.push({
                 id: this.generateId(),
-                text: word.text.trim(),
-                confidence: word.confidence / 100, // Normalize to 0-1
+                text: text,
+                confidence: confidence,
                 boundingBox: boundingBox,
-                // Computed properties for sorting
                 centerX: boundingBox.x + boundingBox.width / 2,
                 centerY: boundingBox.y + boundingBox.height / 2
             });
@@ -118,28 +150,103 @@ class OCRService {
     }
 
     /**
+     * Check if a word passes all configured filters
+     */
+    passesFilters(text, confidence, bboxSize) {
+        // Confidence filter
+        if (confidence < this.options.minConfidence) {
+            return false;
+        }
+
+        // Minimum length filter
+        if (text.length < this.options.minWordLength) {
+            return false;
+        }
+
+        // Bounding box size filter (filter tiny artifacts)
+        if (bboxSize < this.options.minBboxSize) {
+            return false;
+        }
+
+        // Filter single characters that are common OCR artifacts
+        if (this.options.filterCharacters.includes(text)) {
+            return false;
+        }
+
+        // Filter pure punctuation
+        if (this.options.filterPunctuation && this.isPunctuation(text)) {
+            return false;
+        }
+
+        // Filter pure numbers (optional)
+        if (this.options.filterNumbers && /^[0-9]+$/.test(text)) {
+            return false;
+        }
+
+        // Filter strings that are only symbols/artifacts
+        if (this.isLikelyArtifact(text)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if text is only punctuation/symbols
+     */
+    isPunctuation(text) {
+        // Common punctuation and symbols
+        const punctuationRegex = /^[\s\.,!?\-_=+*\/\\|@#$%^&()[\]{}<>:;"'`~]+$/;
+        return punctuationRegex.test(text);
+    }
+
+    /**
+     * Check if text looks like an OCR artifact
+     */
+    isLikelyArtifact(text) {
+        // Single character that's just a line or dot
+        if (text.length === 1) {
+            const artifacts = ['|', '/', '\\', '-', '_', '.', ',', '`', "'", '"', '*', '~', '^'];
+            if (artifacts.includes(text)) {
+                return true;
+            }
+        }
+
+        // Repeated single characters (often artifacts)
+        if (text.length > 1 && /^(.)\1+$/.test(text)) {
+            return true;
+        }
+
+        // Only whitespace and punctuation
+        if (/^[\s\p{P}\p{S}]+$/u.test(text)) {
+            return true;
+        }
+
+        // Very short strings of only ASCII that aren't real words
+        if (text.length <= 2 && /^[^a-zA-Z\u3040-\u9FFF]+$/.test(text)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Sort tokens in reading order (top-to-bottom, left-to-right)
-     * Groups tokens into lines based on Y position
-     * @param {Array} tokens - Array of token objects
-     * @returns {Array} Sorted array of tokens
      */
     sortTokensInReadingOrder(tokens) {
         if (tokens.length === 0) {
             return [];
         }
 
-        // Calculate average token height for line grouping threshold
         const avgHeight = tokens.reduce((sum, t) => sum + t.boundingBox.height, 0) / tokens.length;
         const threshold = avgHeight * this.lineGroupingThreshold;
 
-        // Group tokens into lines based on Y position
         const lines = [];
 
         for (const token of tokens) {
             let addedToLine = false;
 
             for (let i = 0; i < lines.length; i++) {
-                // Check if token belongs to this line (similar Y position)
                 if (lines[i].length > 0) {
                     const firstInLine = lines[i][0];
                     const yDiff = Math.abs(token.centerY - firstInLine.centerY);
@@ -157,23 +264,20 @@ class OCRService {
             }
         }
 
-        // Sort lines by Y position (descending - higher Y = top of page in our coordinate system)
         lines.sort((line1, line2) => {
             if (line1.length === 0 || line2.length === 0) return 0;
             return line2[0].centerY - line1[0].centerY;
         });
 
-        // Sort tokens within each line by X position (left to right)
         for (const line of lines) {
             line.sort((a, b) => a.centerX - b.centerX);
         }
 
-        // Flatten into single array
         return lines.flat();
     }
 
     /**
-     * Generate a unique ID for a token
+     * Generate a unique ID
      */
     generateId() {
         return 'token_' + Math.random().toString(36).substr(2, 9);
@@ -196,7 +300,7 @@ class OCRService {
     }
 
     /**
-     * Terminate the worker when done
+     * Terminate the worker
      */
     async terminate() {
         if (this.worker) {

@@ -5,8 +5,8 @@
 
 class ScanToLearnApp {
     constructor() {
-        // Services
-        this.ocrService = new OCRService();
+        // Services - initialize with default confidence
+        this.ocrService = new OCRService({ minConfidence: 0.50 });
         this.translationService = new TranslationService();
 
         // State
@@ -28,6 +28,8 @@ class ScanToLearnApp {
             sourceLanguage: document.getElementById('source-language'),
             targetLanguage: document.getElementById('target-language'),
             swapLanguages: document.getElementById('swap-languages'),
+            confidenceSlider: document.getElementById('confidence-slider'),
+            confidenceValue: document.getElementById('confidence-value'),
             processingStatus: document.getElementById('processing-status'),
             progressFill: document.getElementById('progress-fill'),
             progressText: document.getElementById('progress-text'),
@@ -71,6 +73,13 @@ class ScanToLearnApp {
 
         // Language swap
         this.elements.swapLanguages.addEventListener('click', () => this.swapLanguages());
+
+        // Confidence slider
+        this.elements.confidenceSlider.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value);
+            this.elements.confidenceValue.textContent = `${value}%`;
+            this.ocrService.setOptions({ minConfidence: value / 100 });
+        });
 
         // Back button
         this.elements.backBtn.addEventListener('click', () => this.showScreen('home'));
